@@ -1,0 +1,6 @@
+node_modules/
+
+# Output directories
+benchmark_files/
+babel_output/
+swc_output/
