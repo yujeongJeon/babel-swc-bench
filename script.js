@@ -316,21 +316,11 @@ export class EventEmitter${index}<T extends Record<string, any[]>> {
   console.log(`✅ 총 ${CONFIG.fileCount}개 파일 생성 완료!\n`);
 }
 
-// 메모리 사용량 측정
-function getMemoryUsage() {
-  const usage = process.memoryUsage();
-  return {
-    rss: Math.round(usage.rss / 1024 / 1024), // MB
-    heapUsed: Math.round(usage.heapUsed / 1024 / 1024), // MB
-    heapTotal: Math.round(usage.heapTotal / 1024 / 1024), // MB
-    external: Math.round(usage.external / 1024 / 1024) // MB
-  };
-}
 
 // Babel로 변환
 async function benchmarkBabel() {
   console.log('2. Babel 벤치마크 시작...');
-  
+
   // Babel 설정 파일 생성
   const babelConfig = {
     presets: [
@@ -352,53 +342,31 @@ async function benchmarkBabel() {
   }
   fs.mkdirSync(CONFIG.babelOutputDir, { recursive: true });
 
+  console.log(`  📂 ${CONFIG.fileCount}개 파일 변환 시작...`);
   const startTime = performance.now();
-  const startMemory = getMemoryUsage();
-  
-  console.log(`  📝 메모리 시작: ${startMemory.heapUsed}MB`);
-  
-  // 중간 진행상황 체크를 위한 timeout 설정
-  const progressInterval = setInterval(() => {
-    const currentMemory = getMemoryUsage();
-    const elapsed = (performance.now() - startTime) / 1000;
-    console.log(`    ⏱️  경과시간: ${elapsed.toFixed(1)}초, 현재 메모리: ${currentMemory.heapUsed}MB`);
-  }, 5000);
   
   try {
-    // Babel CLI로 변환 (병렬 처리 없이)
     const command = `npx babel ${CONFIG.outputDir} --out-dir ${CONFIG.babelOutputDir} --extensions .tsx,.ts --source-maps`;
     
-    console.log('  실행 중: ' + command);
-    console.log('  💭 빌드 중 예상되는 현상:');
-    console.log('    - 메모리 사용량이 점진적으로 증가');
-    console.log('    - 중간에 갑작스러운 일시정지 (GC 실행)');
-    console.log('    - 예측 불가능한 성능 변동');
+    console.log(`  ⚙️  실행: ${command}`);
     
     execSync(command, { 
-      stdio: 'pipe',
-      encoding: 'utf8',
-      env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=4096' }
+      stdio: 'pipe', // 출력 숨김 (깔끔한 결과를 위해)
+      encoding: 'utf8'
     });
     
-    clearInterval(progressInterval);
-    
     const endTime = performance.now();
-    const endMemory = getMemoryUsage();
+    const duration = Math.round(endTime - startTime);
     
-    console.log(`  ✅ Babel 완료!`);
-    console.log(`    📊 최종 메모리: ${endMemory.heapUsed}MB (증가: +${endMemory.heapUsed - startMemory.heapUsed}MB)`);
+    console.log(`  ✅ Babel 완료! 소요시간: ${(duration / 1000).toFixed(1)}초`);
     
     return {
       name: 'Babel (JavaScript)',
-      duration: Math.round(endTime - startTime),
-      startMemory,
-      endMemory,
-      memoryDelta: endMemory.heapUsed - startMemory.heapUsed,
-      gcSuspected: true // JavaScript 기반이므로 GC 발생 가능
+      duration: duration,
+      filesProcessed: CONFIG.fileCount
     };
   } catch (error) {
-    clearInterval(progressInterval);
-    console.error('Babel 변환 실패:', error.message);
+    console.error('  ❌ Babel 변환 실패:', error.message);
     return null;
   }
 }
@@ -441,79 +409,83 @@ async function benchmarkSWC() {
   }
   fs.mkdirSync(CONFIG.swcOutputDir, { recursive: true });
 
+  console.log(`  📂 ${CONFIG.fileCount}개 파일 변환 시작...`);
   const startTime = performance.now();
-  const startMemory = getMemoryUsage();
-  
-  console.log(`  📝 메모리 시작: ${startMemory.heapUsed}MB`);
   
   try {
-    // SWC CLI로 변환
     const command = `npx swc ${CONFIG.outputDir} -d ${CONFIG.swcOutputDir} --source-maps`;
     
-    console.log('  실행 중: ' + command);
-    console.log('  💭 SWC 특징:');
-    console.log('    - Rust 네이티브 코드 (GC 없음)');
-    console.log('    - 일정한 성능, 예측 가능한 속도');
-    console.log('    - 멀티코어 활용');
+    console.log(`  ⚙️  실행: ${command}`);
     
     execSync(command, { 
-      stdio: 'pipe',
+      stdio: 'pipe', // 출력 숨김 (깔끔한 결과를 위해)
       encoding: 'utf8'
     });
     
     const endTime = performance.now();
-    const endMemory = getMemoryUsage();
+    const duration = Math.round(endTime - startTime);
     
-    console.log(`  ✅ SWC 완료!`);
-    console.log(`    📊 최종 메모리: ${endMemory.heapUsed}MB (증가: +${endMemory.heapUsed - startMemory.heapUsed}MB)`);
+    console.log(`  ✅ SWC 완료! 소요시간: ${(duration / 1000).toFixed(1)}초`);
     
     return {
       name: 'SWC (Rust)',
-      duration: Math.round(endTime - startTime),
-      startMemory,
-      endMemory,
-      memoryDelta: endMemory.heapUsed - startMemory.heapUsed,
-      gcSuspected: false // Rust 기반이므로 GC 없음
+      duration: duration,
+      filesProcessed: CONFIG.fileCount
     };
   } catch (error) {
-    console.error('SWC 변환 실패:', error.message);
+    console.error('  ❌ SWC 변환 실패:', error.message);
     return null;
   }
 }
 
 // 결과 출력
 function printResults(babelResult, swcResult) {
-  console.log('\n' + '='.repeat(70));
-  console.log('📊 벤치마크 결과: JavaScript GC vs Rust Native');
-  console.log('='.repeat(70));
+  console.log('\n' + '='.repeat(60));
+  console.log('🏁 성능 비교 결과');
+  console.log('='.repeat(60));
   
   if (babelResult) {
-    console.log(`\n🔥 ${babelResult.name}:`);
-    console.log(`├── 소요시간: ${(babelResult.duration / 1000).toFixed(1)}초`);
-    console.log(`├── 시작 메모리: ${babelResult.startMemory.heapUsed}MB`);
-    console.log(`├── 종료 메모리: ${babelResult.endMemory.heapUsed}MB`);
-    console.log(`├── 메모리 증가: ${babelResult.memoryDelta}MB`);
-    console.log(`└── GC 영향: ${babelResult.gcSuspected ? '⚠️  예상됨 (성능 변동 가능)' : '✅ 없음'}`);
+    console.log(`\n🔥 ${babelResult.name}`);
+    console.log(`   ⏱️  소요시간: ${(babelResult.duration / 1000).toFixed(1)}초`);
+    console.log(`   📁 처리파일: ${babelResult.filesProcessed.toLocaleString()}개`);
+    console.log(`   ⚡ 처리속도: ${Math.round(babelResult.filesProcessed / (babelResult.duration / 1000)).toLocaleString()}개/초`);
   }
   
   if (swcResult) {
-    console.log(`\n⚡ ${swcResult.name}:`);
-    console.log(`├── 소요시간: ${(swcResult.duration / 1000).toFixed(1)}초`);
-    console.log(`├── 시작 메모리: ${swcResult.startMemory.heapUsed}MB`);
-    console.log(`├── 종료 메모리: ${swcResult.endMemory.heapUsed}MB`);
-    console.log(`├── 메모리 증가: ${swcResult.memoryDelta}MB`);
-    console.log(`└── GC 영향: ${swcResult.gcSuspected ? '⚠️  예상됨' : '✅ 없음 (일정한 성능)'}`);
+    console.log(`\n⚡ ${swcResult.name}`);
+    console.log(`   ⏱️  소요시간: ${(swcResult.duration / 1000).toFixed(1)}초`);
+    console.log(`   📁 처리파일: ${swcResult.filesProcessed.toLocaleString()}개`);
+    console.log(`   ⚡ 처리속도: ${Math.round(swcResult.filesProcessed / (swcResult.duration / 1000)).toLocaleString()}개/초`);
   }
   
   if (babelResult && swcResult) {
     const speedup = babelResult.duration / swcResult.duration;
-    const memoryImprovement = Math.abs(babelResult.memoryDelta) / Math.abs(swcResult.memoryDelta);
+    const timeSaved = (babelResult.duration - swcResult.duration) / 1000;
     
-    console.log(`\n🏆 성능 비교 분석:`);
-    console.log(`├── 속도: SWC가 ${speedup.toFixed(1)}배 빠름`);
-    console.log(`├── 메모리: SWC가 ${memoryImprovement.toFixed(1)}배 효율적`);
-    console.log(`├── 시간 절약: ${((babelResult.duration - swcResult.duration) / 1000).toFixed(1)}초`);
-    console.log(`└── 개발 경험: SWC는 예측 가능, Babel은 변동성 있음`);
+    console.log(`\n🎯 성능 분석`);
+    console.log(`   📈 속도 향상: SWC가 ${speedup.toFixed(1)}배 빠름`);
+    console.log(`   ⏰ 시간 절약: ${timeSaved.toFixed(1)}초`);
+    
+    // 체감도 분석
+    if (speedup >= 10) {
+      console.log(`   🚀 ${speedup.toFixed(0)}배 차이는 혁신적인 수준!`);
+    } else if (speedup >= 5) {
+      console.log(`   🔥 ${speedup.toFixed(0)}배 차이는 확실히 체감되는 수준!`);
+    } else if (speedup >= 2) {
+      console.log(`   ⚡ ${speedup.toFixed(1)}배 차이는 개발 경험을 개선시킴`);
+    } else {
+      console.log(`   📊 ${speedup.toFixed(1)}배 차이는 미미하지만 누적되면 의미있음`);
+    }
+    
+    // 실무 적용 시뮬레이션
+    console.log(`\n실무 영향 분석 (하루 10회 빌드 가정)`);
+    const dailySavings = (timeSaved * 10) / 60; // 분 단위
+    const weeklySavings = dailySavings * 5;
+    const monthlySavings = weeklySavings * 4;
+    
+    console.log(`- 일일 절약: ${dailySavings.toFixed(1)}분`);
+    console.log(`- 주간 절약: ${weeklySavings.toFixed(1)}분`);
+    console.log(`- 월간 절약: ${monthlySavings.toFixed(1)}분 (${(monthlySavings / 60).toFixed(1)}시간)`);
   }
 }
 
